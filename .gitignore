@@ -1,0 +1,16 @@
+# Dépendances
+/node_modules
+
+# Fichiers d'environnement (contient des secrets)
+.env
+
+# Fichiers de données générés ou locaux
+/data/pokemon-tcg.db
+/data/.api-counter.json
+/data/export/
+
+# Fichiers générés par l'OS ou l'IDE
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

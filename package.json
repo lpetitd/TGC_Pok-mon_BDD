@@ -1,0 +1,29 @@
+{
+  "name": "pokemon-tcg-db",
+  "version": "1.0.0",
+  "description": "Pokemon TCG database with card pricing and sealed product data",
+  "scripts": {
+    "validate": "ts-node src/tests/api-validation.ts",
+    "import:all": "ts-node src/cli/index.ts import:all",
+    "import:cards": "ts-node src/cli/index.ts import:cards",
+    "import:sealed": "ts-node src/cli/index.ts import:sealed",
+    "stats": "ts-node src/cli/index.ts stats",
+    "export": "ts-node src/cli/index.ts export:json"
+  },
+  "dependencies": {
+    "@tcgdex/sdk": "^2.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/inquirer": "^9.0.9",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^12.6.2",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.0",
+    "inquirer": "^8.2.7",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  }
+}
