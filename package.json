@@ -7,6 +7,8 @@
     "import:all": "ts-node src/cli/index.ts import:all",
     "import:cards": "ts-node src/cli/index.ts import:cards",
     "import:sealed": "ts-node src/cli/index.ts import:sealed",
+    "fetch-urls": "ts-node src/cli/index.ts db:fetch-cardmarket-urls",
+    "db:backfill": "ts-node src/cli/index.ts db:backfill",
     "stats": "ts-node src/cli/index.ts stats",
     "export": "ts-node src/cli/index.ts export:json"
   },

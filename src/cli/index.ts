@@ -5,9 +5,10 @@ import chalk from 'chalk';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { initDatabase, listBlocks, listSeries as dbListSeries, listCards, listSealedProducts, getStats, countCards, countSealedProducts, getPriceHistory, countSnapshots, countSnapshotItems, getLatestSnapshotDate } from '../db/database';
+import { initDatabase, listBlocks, listSeries as dbListSeries, listCards, listSealedProducts, getStats, countCards, countSealedProducts, getPriceHistory, countSnapshots, countSnapshotItems, getLatestSnapshotDate, backfillCardColumns } from '../db/database';
 import { importAllCards, importCardsForSet } from '../importers/cardsImporter';
 import { importAllSealed, importSealedForEpisode } from '../importers/sealedImporter';
+import { fetchCardmarketUrls } from '../importers/cardmarketUrlImporter';
 import { getQuotaUsed, getQuotaRemaining, setQuotaCount } from '../apis/pokemonapi';
 import { takeSnapshots } from '../snapshots/snapshotManager';
 import type { SnapshotItemType } from '../models/PriceSnapshot';
@@ -245,6 +246,39 @@ async function runExportJson(flags: Record<string, string | boolean>): Promise<v
   }
 }
 
+function runDbBackfill(): void {
+  initDatabase();
+  console.log(chalk.cyan('\n🔧 Backfill des colonnes manquantes (image_high, image_low, cardmarket_url)…'));
+  const result = backfillCardColumns();
+  console.log(chalk.green(`\n✅ Backfill terminé :`));
+  console.log(chalk.white(`  URLs image mises à jour   : ${result.imageUrlsUpdated}`));
+  console.log(chalk.white(`  URLs Cardmarket mises à jour : ${result.cardmarketUrlUpdated}`));
+  if (result.imageUrlsUpdated === 0 && result.cardmarketUrlUpdated === 0) {
+    console.log(chalk.gray('  (Toutes les colonnes étaient déjà remplies)'));
+  }
+}
+
+async function runFetchCardmarketUrls(flags: Record<string, string | boolean>): Promise<void> {
+  initDatabase();
+  const opts = {
+    setId:    typeof flags.set      === 'string'  ? flags.set : undefined,
+    full:     !!flags.full,
+    dryRun:   !!flags['dry-run'],
+    headless: !!flags.headless,
+    debug:    !!flags.debug,
+    delay:    typeof flags.delay    === 'string'  ? parseInt(flags.delay, 10) : undefined,
+  };
+
+  const summary = await fetchCardmarketUrls(opts);
+
+  console.log(chalk.bold('\n' + '─'.repeat(54)));
+  console.log(chalk.green('[TERMINÉ] Récupération URLs Cardmarket'));
+  console.log(chalk.white(`  Traitées    : ${summary.processed}`));
+  console.log(chalk.white(`  Trouvées    : ${summary.found}`));
+  if (summary.notFound > 0) console.log(chalk.yellow(`  Non trouvées: ${summary.notFound}`));
+  if (summary.errors   > 0) console.log(chalk.red(   `  Erreurs     : ${summary.errors}`));
+}
+
 function runSnapshotTake(flags: Record<string, string | boolean>): void {
   initDatabase();
 
@@ -367,6 +401,25 @@ function printHelp(): void {
   ${chalk.bold('import:all')} [--full]
       Importe tout (cartes + scellés).
 
+  ⚠  Pour passer des options via npm run, utilisez -- avant les flags :
+      npm run import:cards -- --set swsh1
+      npm run import:cards -- --set swsh1 --full
+
+  ${chalk.bold('db:backfill')}
+      Remplit image_high, image_low et cardmarket_url pour les cartes
+      déjà importées (aucun appel API — lit les données existantes en base).
+      À lancer une fois après une mise à jour du schéma.
+
+  ${chalk.bold('db:fetch-cardmarket-urls')} [--set <id>] [--full] [--dry-run] [--headless] [--delay <ms>]
+      Recherche sur Google l'URL Cardmarket de chaque carte et l'enregistre en base.
+      Reprend là où c'était arrêté (ignore les cartes déjà renseignées).
+      --set <id>   : seulement ce set (ex: swsh1, sv01)
+      --full       : refait même les cartes déjà renseignées
+      --dry-run    : simule sans écrire en base
+      --headless   : navigateur invisible (défaut : fenêtre visible)
+      --delay <ms> : délai entre requêtes en ms (défaut : 1500 — augmenter si captcha)
+      --debug      : sauvegarde le HTML brut dans data/debug/ quand rien n'est trouvé
+
   ${chalk.bold('export:json')} [--type cards|sealed]
       Exporte la base en JSON dans data/export/.
 
@@ -431,6 +484,14 @@ async function main(): Promise<void> {
 
     case 'import:all':
       await runImportAll(flags);
+      break;
+
+    case 'db:backfill':
+      runDbBackfill();
+      break;
+
+    case 'db:fetch-cardmarket-urls':
+      await runFetchCardmarketUrls(flags);
       break;
 
     case 'export:json':

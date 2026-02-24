@@ -142,7 +142,9 @@ export function upsertCard(card: Card): void {
        (id, local_id, name, image, image_high, image_low, rarity, set_id,
         cardmarket_url, pricing_cardmarket, pricing_tcgplayer, raw_data,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+       COALESCE(?, (SELECT cardmarket_url FROM cards WHERE id = ?)),
+       ?, ?, ?,
        COALESCE((SELECT created_at FROM cards WHERE id = ?), ?), ?)`
   ).run(
     card.id,
@@ -153,7 +155,7 @@ export function upsertCard(card: Card): void {
     card.imageLow     ?? null,
     card.rarity       ?? null,
     card.setId,
-    card.cardmarketUrl ?? null,
+    card.cardmarketUrl ?? null, card.id,   // preserve existing URL if new one is null
     card.pricingCardmarket ? JSON.stringify(card.pricingCardmarket) : null,
     card.pricingTcgplayer  ? JSON.stringify(card.pricingTcgplayer)  : null,
     card.rawData           ? JSON.stringify(card.rawData)           : null,
@@ -266,6 +268,96 @@ export function countSealedProducts(): number {
 export function sealedProductExists(id: number): boolean {
   const row = getDb().prepare(`SELECT 1 FROM sealed_products WHERE id = ?`).get(id);
   return !!row;
+}
+
+/* ─────────────────────────────────────────────
+   Backfill helpers
+───────────────────────────────────────────── */
+
+export interface BackfillResult {
+  imageUrlsUpdated: number;
+  cardmarketUrlUpdated: number;
+}
+
+/**
+ * Fills in image_high, image_low and cardmarket_url for cards that already
+ * exist in the DB but were imported before these columns were added.
+ * Uses only data already in the database — no API calls.
+ *
+ * - image_high / image_low : derived from the existing `image` base URL
+ * - cardmarket_url          : extracted from the pricing_cardmarket JSON via json_extract()
+ */
+export function backfillCardColumns(): BackfillResult {
+  const db = getDb();
+
+  /* Fill image_high and image_low from existing base image URL */
+  const imgResult = db.prepare(`
+    UPDATE cards
+    SET
+      image_high = image || '/high.webp',
+      image_low  = image || '/low.webp'
+    WHERE image IS NOT NULL
+      AND (image_high IS NULL OR image_low IS NULL)
+  `).run();
+
+  /* Fill cardmarket_url from the JSON stored in pricing_cardmarket */
+  const urlResult = db.prepare(`
+    UPDATE cards
+    SET cardmarket_url = json_extract(pricing_cardmarket, '$.url')
+    WHERE pricing_cardmarket IS NOT NULL
+      AND cardmarket_url IS NULL
+      AND json_extract(pricing_cardmarket, '$.url') IS NOT NULL
+  `).run();
+
+  return {
+    imageUrlsUpdated:    imgResult.changes,
+    cardmarketUrlUpdated: urlResult.changes,
+  };
+}
+
+/* ─────────────────────────────────────────────
+   Cardmarket URL helpers
+───────────────────────────────────────────── */
+
+export interface CardUrlRow {
+  id: string;
+  name: string;
+  localId: string;
+  setName: string;
+}
+
+/** Updates only the cardmarket_url column for a single card. */
+export function updateCardmarketUrl(cardId: string, url: string): void {
+  getDb().prepare(
+    `UPDATE cards SET cardmarket_url = ?, updated_at = ? WHERE id = ?`
+  ).run(url, now(), cardId);
+}
+
+/**
+ * Returns cards that need a Cardmarket URL fetched.
+ * By default only returns cards where cardmarket_url IS NULL.
+ * Pass full=true to return all cards regardless.
+ */
+export function listCardsForUrlFetch(setId?: string, full = false): CardUrlRow[] {
+  const db = getDb();
+  const base = `
+    SELECT c.id, c.name, c.local_id AS localId, s.name AS setName
+    FROM   cards  c
+    JOIN   series s ON s.id = c.set_id
+  `;
+  if (setId && !full) {
+    return db.prepare(`${base} WHERE c.cardmarket_url IS NULL AND c.set_id = ? ORDER BY c.local_id`)
+      .all(setId) as CardUrlRow[];
+  } else if (setId && full) {
+    return db.prepare(`${base} WHERE c.set_id = ? ORDER BY c.local_id`)
+      .all(setId) as CardUrlRow[];
+  } else if (!full) {
+    return db.prepare(`${base} WHERE c.cardmarket_url IS NULL ORDER BY c.set_id, c.local_id`)
+      .all() as CardUrlRow[];
+  } else {
+    return db.prepare(`${base} ORDER BY c.set_id, c.local_id`)
+      .all() as CardUrlRow[];
+  }
 }
 
 /* ─────────────────────────────────────────────
