@@ -31,8 +31,11 @@ export const CREATE_CARDS = `
     local_id            TEXT,
     name                TEXT NOT NULL,
     image               TEXT,
+    image_high          TEXT,
+    image_low           TEXT,
     rarity              TEXT,
     set_id              TEXT NOT NULL,
+    cardmarket_url      TEXT,
     pricing_cardmarket  JSON,
     pricing_tcgplayer   JSON,
     raw_data            JSON,
@@ -41,6 +44,17 @@ export const CREATE_CARDS = `
     FOREIGN KEY (set_id) REFERENCES series(id)
   )
 `;
+
+/**
+ * Migration statements to add new columns to existing databases.
+ * SQLite ALTER TABLE does not support IF NOT EXISTS on columns,
+ * so these are run with error suppression (column already exists → ignored).
+ */
+export const MIGRATE_CARDS_V2 = [
+  `ALTER TABLE cards ADD COLUMN image_high     TEXT`,
+  `ALTER TABLE cards ADD COLUMN image_low      TEXT`,
+  `ALTER TABLE cards ADD COLUMN cardmarket_url TEXT`,
+];
 
 export const CREATE_SEALED_PRODUCTS = `
   CREATE TABLE IF NOT EXISTS sealed_products (

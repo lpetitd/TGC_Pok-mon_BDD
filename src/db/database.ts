@@ -1,7 +1,7 @@
 import BetterSqlite3 from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ALL_DDL } from './schema';
+import { ALL_DDL, MIGRATE_CARDS_V2 } from './schema';
 import type { Block } from '../models/Block';
 import type { Serie } from '../models/Serie';
 import type { Card } from '../models/Card';
@@ -32,6 +32,10 @@ export function initDatabase(): void {
   const db = getDb();
   for (const ddl of ALL_DDL) {
     db.exec(ddl);
+  }
+  /* Migration: add columns introduced after initial schema — silently skip if already present */
+  for (const sql of MIGRATE_CARDS_V2) {
+    try { db.exec(sql); } catch { /* column already exists */ }
   }
 }
 
@@ -135,21 +139,24 @@ export function upsertCard(card: Card): void {
   const db = getDb();
   db.prepare(
     `INSERT OR REPLACE INTO cards
-       (id, local_id, name, image, rarity, set_id,
-        pricing_cardmarket, pricing_tcgplayer, raw_data,
+       (id, local_id, name, image, image_high, image_low, rarity, set_id,
+        cardmarket_url, pricing_cardmarket, pricing_tcgplayer, raw_data,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
        COALESCE((SELECT created_at FROM cards WHERE id = ?), ?), ?)`
   ).run(
     card.id,
     card.localId,
     card.name,
-    card.image ?? null,
-    card.rarity ?? null,
+    card.image        ?? null,
+    card.imageHigh    ?? null,
+    card.imageLow     ?? null,
+    card.rarity       ?? null,
     card.setId,
+    card.cardmarketUrl ?? null,
     card.pricingCardmarket ? JSON.stringify(card.pricingCardmarket) : null,
-    card.pricingTcgplayer ? JSON.stringify(card.pricingTcgplayer) : null,
-    card.rawData ? JSON.stringify(card.rawData) : null,
+    card.pricingTcgplayer  ? JSON.stringify(card.pricingTcgplayer)  : null,
+    card.rawData           ? JSON.stringify(card.rawData)           : null,
     card.id, now(),
     now(),
   );
@@ -157,28 +164,25 @@ export function upsertCard(card: Card): void {
 
 /** Returns cards for a given set, or all cards if no setId given. */
 export function listCards(setId?: string): Card[] {
+  const SELECT = `
+    SELECT id, local_id as localId, name,
+           image, image_high as imageHigh, image_low as imageLow,
+           rarity, set_id as setId, cardmarket_url as cardmarketUrl,
+           pricing_cardmarket as pricingCardmarket,
+           pricing_tcgplayer as pricingTcgplayer,
+           raw_data as rawData, created_at as createdAt, updated_at as updatedAt
+    FROM cards`;
+
   const rows = setId
-    ? getDb().prepare(
-        `SELECT id, local_id as localId, name, image, rarity, set_id as setId,
-                pricing_cardmarket as pricingCardmarket,
-                pricing_tcgplayer as pricingTcgplayer,
-                raw_data as rawData, created_at as createdAt, updated_at as updatedAt
-         FROM cards WHERE set_id = ? ORDER BY local_id`
-      ).all(setId)
-    : getDb().prepare(
-        `SELECT id, local_id as localId, name, image, rarity, set_id as setId,
-                pricing_cardmarket as pricingCardmarket,
-                pricing_tcgplayer as pricingTcgplayer,
-                raw_data as rawData, created_at as createdAt, updated_at as updatedAt
-         FROM cards ORDER BY set_id, local_id`
-      ).all();
+    ? getDb().prepare(`${SELECT} WHERE set_id = ? ORDER BY local_id`).all(setId)
+    : getDb().prepare(`${SELECT} ORDER BY set_id, local_id`).all();
 
   return (rows as Array<Card & { pricingCardmarket: string | null; pricingTcgplayer: string | null; rawData: string | null }>)
     .map(r => ({
       ...r,
       pricingCardmarket: r.pricingCardmarket ? JSON.parse(r.pricingCardmarket) : null,
-      pricingTcgplayer: r.pricingTcgplayer ? JSON.parse(r.pricingTcgplayer) : null,
-      rawData: r.rawData ? JSON.parse(r.rawData) : null,
+      pricingTcgplayer:  r.pricingTcgplayer  ? JSON.parse(r.pricingTcgplayer)  : null,
+      rawData:           r.rawData           ? JSON.parse(r.rawData)           : null,
     }));
 }
 

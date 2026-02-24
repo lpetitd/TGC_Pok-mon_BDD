@@ -54,6 +54,20 @@ interface ImportSummary {
    Internal helpers
 ───────────────────────────────────────────── */
 
+/**
+ * Builds full image URLs from a TCGdex image base path.
+ * TCGdex returns e.g. "https://assets.tcgdex.net/fr/swsh/swsh1/1" (no extension).
+ * Appending /high.webp → 600×825 px  |  /low.webp → 245×337 px
+ */
+function buildImageUrls(imageBase: string | null | undefined): { imageHigh: string | null; imageLow: string | null } {
+  if (!imageBase) return { imageHigh: null, imageLow: null };
+  const base = imageBase.replace(/\/$/, '');
+  return {
+    imageHigh: `${base}/high.webp`,
+    imageLow:  `${base}/low.webp`,
+  };
+}
+
 /** Extracts the CardPricingCardmarket from a raw TCGdex card object. */
 function extractCardmarketPricing(rawCard: Record<string, unknown>): CardPricingCardmarket | null {
   const pricing = rawCard.pricing as Record<string, unknown> | undefined;
@@ -64,6 +78,7 @@ function extractCardmarketPricing(rawCard: Record<string, unknown>): CardPricing
   return {
     unit: 'EUR',
     idProduct: (cm.idProduct as number | undefined) ?? null,
+    url:       (cm.url       as string | undefined) ?? null,
     avg: (cm.avg as number | null) ?? null,
     low: (cm.low as number | null) ?? null,
     trend: (cm.trend as number | null) ?? null,
@@ -78,6 +93,13 @@ function extractCardmarketPricing(rawCard: Record<string, unknown>): CardPricing
     'avg30-holo': (cm['avg30-holo'] as number | null) ?? null,
     updated: (cm.updated as string) ?? '',
   };
+}
+
+/** Extracts the Cardmarket product page URL from a raw TCGdex card object. */
+function extractCardmarketUrl(rawCard: Record<string, unknown>): string | null {
+  const pricing = rawCard.pricing as Record<string, unknown> | undefined;
+  const cm = pricing?.cardmarket as Record<string, unknown> | undefined;
+  return (cm?.url as string | undefined) ?? null;
 }
 
 /** Extracts TCGPlayer pricing from a raw TCGdex card object. */
@@ -157,15 +179,21 @@ async function importSet(
         continue;
       }
 
+      const imageBase = (fullCard.image as string | undefined) ?? null;
+      const { imageHigh, imageLow } = buildImageUrls(imageBase);
+
       const card: Card = {
         id: fullCard.id as string,
         localId: fullCard.localId as string,
         name: fullCard.name as string,
-        image: (fullCard.image as string | undefined) ?? null,
-        rarity: (fullCard.rarity as string | undefined) ?? null,
-        setId: set.id,
+        image:         imageBase,
+        imageHigh,
+        imageLow,
+        rarity:        (fullCard.rarity as string | undefined) ?? null,
+        setId:         set.id,
+        cardmarketUrl: extractCardmarketUrl(fullCard),
         pricingCardmarket: extractCardmarketPricing(fullCard),
-        pricingTcgplayer: extractTcgplayerPricing(fullCard),
+        pricingTcgplayer:  extractTcgplayerPricing(fullCard),
         rawData: toPlainData(fullCard),
       };
 

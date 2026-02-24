@@ -6,6 +6,8 @@ export interface CardPricingCardmarket {
   unit: 'EUR';
   /** Cardmarket internal product id. */
   idProduct?: number | null;
+  /** Direct URL to the card's Cardmarket product page. */
+  url?: string | null;
   avg: number | null;
   low: number | null;
   trend: number | null;
@@ -32,10 +34,17 @@ export interface Card {
   localId: string;
   /** Card name in French. */
   name: string;
+  /** Base image URL from TCGdex (without quality/extension suffix). */
   image?: string | null;
+  /** Full-size image URL (600×825 webp). */
+  imageHigh?: string | null;
+  /** Thumbnail image URL (245×337 webp). */
+  imageLow?: string | null;
   rarity?: string | null;
   /** Foreign key → series.id (TCGdex set id). */
   setId: string;
+  /** Direct URL to the card's Cardmarket product page. */
+  cardmarketUrl?: string | null;
   /** Cardmarket pricing for the French version of this card. */
   pricingCardmarket?: CardPricingCardmarket | null;
   /** TCGPlayer pricing (USD). May be absent. */
